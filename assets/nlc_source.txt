@@ -1,0 +1,2 @@
+NASA AIM/CIPS Level 2 cloud properties, aim_cips_pmc_l2_cloud_prop_2019-181_orbit-66732_north_v05.20_r08.nc, rows 72-142, cols 648-718
+(5 km pixels; window relocated and centred on the mission area). Public domain: NASA/LASP/HU.

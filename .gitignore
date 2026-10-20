@@ -1,0 +1,20 @@
+# Build output
+build/
+build-*/
+*.zip
+
+# Downloaded inputs (re-fetched by tools/fetch_aim.py and tools/generate_terrain.py)
+downloads/
+third_party/
+
+# Generated assets that are too large for git (rebuilt by the tools/ scripts;
+# a complete set ships in the GitHub Release ZIP)
+assets/scenery/
+assets/nlc_macro.png
+assets/nlc_macro_LIT.png
+
+# Recordings and scratch
+video/
+probe_samples*.csv
+art/previews/
+__pycache__/
