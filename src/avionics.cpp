@@ -268,9 +268,17 @@ std::string clock(double s) {
   return buf;
 }
 
-void begin_display(int l, int t, int r, int b, const char* title) {
+void gl_state() {
+  // X-Plane leaves culling and its own blend mode set; the displays need
+  // straight alpha blending and no culling.
   XPLMSetGraphicsState(0, 0, 0, 0, 1, 0, 0);
-  rect(l, b, r, t, kBezel);
+  glDisable(GL_CULL_FACE);
+  glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+}
+
+void begin_display(int l, int t, int r, int b, const char* title) {
+  gl_state();
+  rect(l, b, r, t, kBezel, 1.0f);
   frame(l + 2, b + 2, r - 2, t - 2, Color{0.25f, 0.27f, 0.3f, 1}, 2.0f);
   const float h = static_cast<float>(t - b);
   txt(l + 10, t - h * 0.075f, h * 0.035f, title, kDim, 1.3f);
@@ -367,7 +375,7 @@ void draw_pfd(const Snapshot& s, int l, int t, int r, int b) {
   frame(sl, cy - fs * 0.8f, sr2, cy + fs * 0.8f, kWhite);
   txt_c((sl + sr2) / 2, cy - fs * 0.45f, fs * 0.9f, fmt("%.0f", s.keas), kWhite, 1.8f);
   txt_c((sl + sr2) / 2, at + 6, fs * 0.6f, "KEAS", kDim, 1.2f);
-  txt_c((sl + sr2) / 2, ab - fs * 1.2f, fs * 0.85f, fmt("M %.2f", s.mach), s.mach > 1 ? kAmber : kWhite, 1.6f);
+  txt_c((sl + sr2) / 2, ab - fs * 1.15f, fs * 0.8f, fmt("M %.2f", s.mach), s.mach > 1 ? kAmber : kWhite, 1.6f);
 
   // Altitude tape on the right.
   const float tl = ar + w * 0.015f, tr = r - w * 0.03f;
@@ -407,10 +415,10 @@ void draw_pfd(const Snapshot& s, int l, int t, int r, int b) {
     }
   }
   txt_c(cx, ht + 3, fs * 0.6f, fmt("%03.0f", std::fmod(s.heading + 360.0, 360.0)), kAmber, 1.5f);
-  txt(l + 10, b + h * 0.12f, fs * 0.62f, fmt("G %.1f", s.g), std::abs(s.g) > 3.5 ? kAmber : kWhite, 1.4f);
-  txt(l + 10, b + h * 0.05f, fs * 0.55f, fmt("MAX %.1f", s.gmax), kDim, 1.2f);
-  txt_r(r - 10, b + h * 0.12f, fs * 0.62f, fmt("AOA %.1f", s.alpha), kWhite, 1.4f);
-  txt_r(r - 10, b + h * 0.05f, fs * 0.55f, fmt("Q %.1f KPA", s.q_kpa), kDim, 1.2f);
+  txt(l + 10, b + h * 0.075f, fs * 0.6f, fmt("G %.1f", s.g), std::abs(s.g) > 3.5 ? kAmber : kWhite, 1.4f);
+  txt(l + 10, b + h * 0.025f, fs * 0.5f, fmt("MAX %.1f", s.gmax), kDim, 1.2f);
+  txt_r(r - 10, b + h * 0.075f, fs * 0.6f, fmt("AOA %.1f", s.alpha), kWhite, 1.4f);
+  txt_r(r - 10, b + h * 0.025f, fs * 0.5f, fmt("Q %.1f KPA", s.q_kpa), kDim, 1.2f);
 }
 
 // ------------------------------------------------------------------ NAV
@@ -559,8 +567,8 @@ void draw_sys(const Snapshot& s, int l, int t, int r, int b) {
       fs * 0.8f);
   bar(x0, t - h * 0.47f, x1, t - h * 0.43f, s.ox_kg / s.ox_max, kCyan, "N2O / GRAIN", fmt("%.0f KG", s.ox_kg),
       fs * 0.8f);
-  txt(x0, t - h * 0.55f, fs * 0.85f, fmt("BURN %.1f S", s.burn_s), kWhite, 1.3f);
-  txt(x0, t - h * 0.61f, fs * 0.85f, fmt("MASS %.0f KG", s.mass_kg), kWhite, 1.3f);
+  txt(x0, t - h * 0.535f, fs * 0.75f, fmt("BURN %.1f S", s.burn_s) + fmt("  %.0f KG", s.mass_kg), kWhite,
+      1.2f);
   // Feather schematic: side view, booms raised to the feather angle.
   const float fx = x2 + (x3 - x2) * 0.3f, fy = t - h * 0.3f;
   std::string fst = s.feather > 0.97 ? "RAISED 60^" : s.feather > 0.02 ? "MOVING" : s.feather_cmd ? "UNLOCKED"
@@ -603,21 +611,21 @@ void draw_sys(const Snapshot& s, int l, int t, int r, int b) {
   frame(sl, sb, sr, st, kDim, 1.0f);
   txt(sl, st + 4, fs * 0.7f, "PROBE NLC HISTORY", kDim, 1.1f);
   txt(sl, b + h * 0.025f, fs * 0.7f, fmt("PEAK %.2f", s.probe_max_density), kWhite, 1.2f);
-  // Event log.
-  const float ly0 = b + h * 0.36f + fs * 0.6f;
-  const size_t first = s.events.size() > 4 ? s.events.size() - 4 : 0;
-  float y = ly0 + fs * 4.6f;
+  // Event log: the two latest events, in their own band above the probe.
+  const size_t first = s.events.size() > 2 ? s.events.size() - 2 : 0;
+  float y = b + h * 0.43f;
   for (size_t i = first; i < s.events.size(); ++i) {
     std::string e = s.events[i];
-    if (e.size() > 46) e = e.substr(0, 46);
-    txt(x0, y, fs * 0.62f, e, i + 1 == s.events.size() ? kGreen : kDim, 1.1f);
-    y -= fs * 1.15f;
+    const size_t max_chars = static_cast<size_t>((x3 - x0) / text_width(fs * 0.6f, "M"));
+    if (e.size() > max_chars) e = e.substr(0, max_chars);
+    txt(x0, y, fs * 0.6f, e, i + 1 == s.events.size() ? kGreen : kDim, 1.1f);
+    y -= fs * 1.1f;
   }
 }
 
 // ------------------------------------------------------------- caption
 void draw_caption(const Snapshot& s, int l, int t, int r, int b, bool compact) {
-  XPLMSetGraphicsState(0, 0, 0, 0, 1, 0, 0);
+  gl_state();
   const float w = static_cast<float>(r - l);
   const float big = std::max(16.0f, w * 0.0125f);
   rect(l, t - big * 2.4f, r, t, Color{0, 0, 0, 1}, 0.45f);

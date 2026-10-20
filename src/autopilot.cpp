@@ -213,7 +213,9 @@ Output update(State& st, flight::World& w, const Field& field, const flight::Con
   if (st.step == Step::Reentry && s.pos.u < 72000.0 && s.pos.u > 24000.0) warp = 2.0;
   if (st.step == Step::ToHac || st.step == Step::Hac) warp = 3.0;
   if (st.step == Step::Final && agl > 2500.0) warp = 2.0;
-  out.warp = st.automatic ? warp : 1.0;
+  // The carrier climb is compressed in both modes; after release a pilot
+  // flies in real time.
+  out.warp = (st.automatic || !s.released) ? warp : 1.0;
 
   if (!s.released) {
     out.controls = {};

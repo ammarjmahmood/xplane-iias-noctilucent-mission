@@ -15,10 +15,8 @@ area), then build:
   * nlc_macro.obj/png - a 350 km curved sheet whose texture is the real
     albedo map, upsampled, with fine filaments only where cloud was
     measured; soft edge fade.
-  * nlc_detail.obj/png - 12 km filament tiles drawn around the vehicle for
-    close-up detail. The plugin sets each tile's strength from the real
-    albedo beneath it (hidden / faint / full).
-  * nlc_real.bin - albedo and ice water content grids for the probe.
+  * nlc_real.bin - albedo and ice water content grids, plus a 12 km tile
+    of fine structure, for the probe's density readings.
 
 Run tools/fetch_aim.py first to download the NASA files.
 """
@@ -113,8 +111,7 @@ def macro_texture(alb):
 
 
 def detail_texture():
-    """2048 x 2048 atlas: top half full strength, bottom half faint; each
-    half holds two copies of one periodic 12 km tile of fine structure."""
+    """One periodic 12 km tile of fine NLC structure (probe density)."""
     n = 1024
     bill = periodic_noise(n, 3, 6, aniso=3.0, angle=0.6)
     bill2 = periodic_noise(n, 6, 12, aniso=2.0, angle=0.9)
@@ -122,16 +119,6 @@ def detail_texture():
     crest = (1 - np.abs(np.sin(pi * (0.5 + 0.5 * np.tanh(bill))))) ** 2
     d = np.clip(0.45 * crest + 0.30 * (0.5 + 0.5 * bill2) + 0.35 * np.clip(fil, 0, None), 0, 1.3)
     d = (d - d.min()) / (d.max() - d.min())
-    rows = []
-    for strength in (0.30, 0.15):
-        alpha = np.clip(d ** 1.6 * strength, 0, 1)
-        rgb = np.stack([170 + 80 * d, 205 + 48 * d, np.full_like(d, 255)], 2)
-        tile = np.dstack([rgb, alpha * 255])
-        rows.append(np.concatenate([tile, tile], 1))
-    img = np.concatenate(rows, 0)
-    Image.fromarray(img.clip(0, 255).astype(np.uint8), "RGBA").save(OUT / "nlc_detail.png")
-    lit = (img[..., :3] * (img[..., 3:4] / 255) ** 0.9).clip(0, 255).astype(np.uint8)
-    Image.fromarray(lit, "RGB").save(OUT / "nlc_detail_LIT.png")
     return (d * 255).astype(np.uint8)
 
 
@@ -157,17 +144,6 @@ def main():
              for k, dy in enumerate((-220.0, 220.0))]
     write_obj(OUT / "nlc_macro.obj", macro, {"TEXTURE": "nlc_macro.png", "TEXTURE_LIT": "nlc_macro_LIT.png"},
               header_extra=["GLOBAL_no_shadow", "GLOBAL_luminance 260"], lod=900000)
-    detail = []
-    for level, (v0, v1) in ((2, (0.5, 1.0)), (1, (0.0, 0.5))):
-        for k, dy in enumerate((-120.0, 0.0, 120.0)):
-            u0, u1 = (0.0, 0.5) if k % 2 == 0 else (0.5, 1.0)
-            detail.append(curved_sheet(
-                f"detail{level}_{k}", DETAIL_M, 24, dy, (u0, v0, u1, v1),
-                anim=[f"ANIM_hide -1 {level - 0.5} iias/nlc/detail_level",
-                      f"ANIM_hide {level + 0.5} 9 iias/nlc/detail_level"],
-                attrs=list(glow)))
-    write_obj(OUT / "nlc_detail.obj", detail, {"TEXTURE": "nlc_detail.png", "TEXTURE_LIT": "nlc_detail_LIT.png"},
-              header_extra=["GLOBAL_no_shadow", "GLOBAL_luminance 260"], lod=45000)
     # Probe data: header (n, macro size m, detail tile m, centre offset east,
     # north m); albedo n*n f32 and
     # ice water content n*n f32 (rows south->north, cols west->east); detail
@@ -187,7 +163,8 @@ def main():
     (OUT / "nlc_source.txt").write_text(
         f"NASA AIM/CIPS Level 2 cloud properties, {src}, rows {i}-{i + WIN}, cols {j}-{j + WIN}\n"
         "(5 km pixels; window relocated and centred on the mission area). Public domain: NASA/LASP/HU.\n")
-    for old in ("nlc_patch.obj", "nlc.png", "nlc_LIT.png", "nlc_density.bin"):
+    for old in ("nlc_patch.obj", "nlc.png", "nlc_LIT.png", "nlc_density.bin", "nlc_detail.obj",
+                "nlc_detail.png", "nlc_detail_LIT.png"):
         (OUT / old).unlink(missing_ok=True)
     print("cloud layer written")
 

@@ -144,9 +144,8 @@ int v_in_layer = 0;
 XPLMObjectRef obj_wk2 = nullptr, obj_ss2 = nullptr, obj_probe = nullptr, obj_trail = nullptr,
               obj_plume = nullptr;
 XPLMInstanceRef inst_wk2 = nullptr, inst_ss2 = nullptr, inst_probe = nullptr, inst_plume = nullptr;
-XPLMObjectRef obj_macro = nullptr, obj_detail = nullptr;
+XPLMObjectRef obj_macro = nullptr;
 XPLMInstanceRef inst_macro = nullptr;
-std::array<XPLMInstanceRef, 9> inst_detail{};
 std::array<XPLMObjectRef, 4> obj_scenery{};      // l0, l1, l2, runway
 std::array<XPLMInstanceRef, 4> inst_scenery{};
 struct TrailSeg {
@@ -305,28 +304,19 @@ void place_geo(XPLMInstanceRef inst, double lat, double lon, double alt, const f
 }
 
 void place_scenery() {
-  for (auto& inst : inst_scenery) place_geo(inst, kScnLat, kScnLon, 0.0, nullptr);
+  // From high up the edge of the bundled patch would show against X-Plane's
+  // ocean, so the fallback scenery is only drawn below ~22 km.
+  const double h = world.ship.pos.u;
+  for (auto& inst : inst_scenery) {
+    if (h > 22000.0) place_instance(inst, {0, -100000, 0}, 0, 0, 0, nullptr);
+    else place_geo(inst, kScnLat, kScnLon, 0.0, nullptr);
+  }
 }
 
-void place_clouds(double ship_e, double ship_n) {
+void place_clouds() {
   double clat, clon;
   geo.enu_to_ll(cloud.off_e, cloud.off_n, clat, clon);
   place_geo(inst_macro, clat, clon, flight::kCloudAltM, nullptr);
-  // 3x3 high-resolution tiles around the ship on a lattice anchored to the sheet.
-  const double D = cloud.detail_m;
-  const double ce = std::round((ship_e - cloud.off_e) / D) * D + cloud.off_e;
-  const double cn = std::round((ship_n - cloud.off_n) / D) * D + cloud.off_n;
-  int k = 0;
-  for (int dr = -1; dr <= 1; ++dr) {
-    for (int dc = -1; dc <= 1; ++dc, ++k) {
-      const double e = ce + dc * D, n = cn + dr * D;
-      const double alb = grid_sample(cloud.albedo, e, n);
-      float level = alb > 16 ? 2.0f : alb > 5 ? 1.0f : 0.0f;
-      if (v_nlc_visible < 0.05f) level = 0.0f;
-      geo.enu_to_ll(e, n, clat, clon);
-      place_geo(inst_detail[k], clat, clon, flight::kCloudAltM, &level);
-    }
-  }
 }
 
 // ---------------------------------------------------------------- camera
@@ -479,6 +469,16 @@ int camera_func(XPLMCameraPosition_t* out, int losing, void*) {
       // Smoothly lag the chase direction toward the velocity vector.
       chase_dir = norm(chase_dir * 0.96 + vdir * 0.04);
       const double dist = s.rocket_on ? 70.0 : 42.0;
+      if (s.pos.u > 40000.0 && s.vel.u < 0) {
+        // Falling from space: looking steeply down would show the edge of
+        // the ground tiles X-Plane keeps loaded, so frame the ship from
+        // behind and slightly below, against the horizon and black sky.
+        V3 back = norm({vel.x, 0, vel.z});
+        if (dot(back, back) < 0.5) back = norm({f.x, 0, f.z});
+        const V3 eye = ship - back * dist + V3{0, -12.0, 0};
+        look_at(out, eye, ship, 0, 1.0);
+        break;
+      }
       const V3 eye = ship - chase_dir * dist + V3{0, 9.0, 0};
       look_at(out, eye, ship + vdir * 6.0, 0, 1.0);
       break;
@@ -559,7 +559,8 @@ int camera_func(XPLMCameraPosition_t* out, int losing, void*) {
     default: {
       orbit_angle += 0.15;
       const double a = rad(orbit_angle);
-      const V3 eye = ship + V3{55.0 * std::sin(a), 14.0 + 6 * std::sin(a * 0.7), 55.0 * std::cos(a)};
+      const double lift = (s.pos.u > 40000.0 && s.vel.u < 0) ? -10.0 : 14.0;
+      const V3 eye = ship + V3{55.0 * std::sin(a), lift + 6 * std::sin(a * 0.7), 55.0 * std::cos(a)};
       look_at(out, eye, ship, 0, 1.0);
       break;
     }
@@ -586,7 +587,7 @@ avionics::Snapshot snapshot() {
   sn.phase = flight::phase_name(s.phase);
   sn.step = autopilot::step_name(ap.step);
   sn.camera = cam_name(cam) + std::string(cam_auto ? "" : " (MANUAL)");
-  sn.warp = ap.automatic ? ap.warp : 1.0;
+  sn.warp = ap.warp;
   sn.automatic = ap.automatic;
   sn.pitch = s.pitch_deg;
   sn.roll = s.roll_deg;
@@ -894,7 +895,6 @@ void end_mission() {
   place_instance(inst_probe, {0, -100000, 0}, 0, 0, 0, nullptr);
   place_instance(inst_ss2, {0, -100000, 0}, 0, 0, 0, nullptr);
   place_instance(inst_macro, {0, -100000, 0}, 0, 0, 0, nullptr);
-  for (auto& c : inst_detail) place_instance(c, {0, -100000, 0}, 0, 0, 0, nullptr);
   for (auto& c : inst_scenery) place_instance(c, {0, -100000, 0}, 0, 0, 0, nullptr);
   scenery_active = false;
   XPLMDebugString("NLC: mission stopped\n");
@@ -1045,7 +1045,7 @@ float flight_loop(float elapsed, float, int, void*) {
     return -1.0f;
   }
   if (!active) return -1.0f;
-  place_clouds(world.ship.pos.e, world.ship.pos.n);
+  place_clouds();
   if (dr_paused && XPLMGetDatai(dr_paused)) return -1.0f;
 
   // Terrain under the ship (and the carrier while on the runway).
@@ -1075,7 +1075,12 @@ float flight_loop(float elapsed, float, int, void*) {
   if (ap.events.size() < events_seen) events_seen = ap.events.size();
   update_science(dt);
   update_visuals(dt);
-  if (cam_auto) direct_camera();
+  if (cam_auto) {
+    // A pilot flying manually gets the cockpit and its displays after release;
+    // "Next camera" still cycles views.
+    if (!ap.automatic && world.ship.released) set_cam(Cam::Cockpit);
+    else direct_camera();
+  }
   if (dr_fov && std::abs(wanted_fov - applied_fov) > 0.01) {
     XPLMSetDataf(dr_fov, static_cast<float>(wanted_fov));
     applied_fov = wanted_fov;
@@ -1330,7 +1335,6 @@ void destroy_objects() {
   kill(inst_probe);
   kill(inst_plume);
   kill(inst_macro);
-  for (auto& c : inst_detail) kill(c);
   for (auto& c : inst_scenery) kill(c);
   for (auto& t : trail) kill(t.inst);
   trail.clear();
@@ -1338,7 +1342,7 @@ void destroy_objects() {
     if (o) XPLMUnloadObject(o);
     o = nullptr;
   }
-  for (XPLMObjectRef* o : {&obj_macro, &obj_detail, &obj_wk2, &obj_ss2, &obj_probe, &obj_trail, &obj_plume}) {
+  for (XPLMObjectRef* o : {&obj_macro, &obj_wk2, &obj_ss2, &obj_probe, &obj_trail, &obj_plume}) {
     if (*o) XPLMUnloadObject(*o);
     *o = nullptr;
   }
@@ -1350,7 +1354,6 @@ PLUGIN_API int XPluginEnable() {
     return XPLMLoadObject((plugin_root / "assets" / file).string().c_str());
   };
   obj_macro = load("nlc_macro.obj");
-  obj_detail = load("nlc_detail.obj");
   static const char* scn[4] = {"scenery/eielson_l0.obj", "scenery/eielson_l1.obj", "scenery/eielson_l2.obj",
                                "scenery/runway.obj"};
   for (int k = 0; k < 4; ++k) obj_scenery[k] = load(scn[k]);  // optional
@@ -1359,7 +1362,7 @@ PLUGIN_API int XPluginEnable() {
   obj_probe = load("probe.obj");
   obj_trail = load("trail.obj");
   obj_plume = load("plume.obj");
-  if (!obj_macro || !obj_detail || !obj_wk2 || !obj_ss2 || !obj_probe || !obj_trail || !obj_plume) {
+  if (!obj_macro || !obj_wk2 || !obj_ss2 || !obj_probe || !obj_trail || !obj_plume) {
     XPLMDebugString("NLC: could not load assets\n");
     destroy_objects();
     return 0;
@@ -1371,8 +1374,6 @@ PLUGIN_API int XPluginEnable() {
   const char* probe_refs[] = {"iias/probe/strobe", "iias/probe/chute", nullptr};
   const char* trail_refs[] = {"iias/trail/age", nullptr};
   inst_macro = XPLMCreateInstance(obj_macro, none);
-  const char* detail_refs[] = {"iias/nlc/detail_level", nullptr};
-  for (auto& c : inst_detail) c = XPLMCreateInstance(obj_detail, detail_refs);
   for (int k = 0; k < 4; ++k)
     if (obj_scenery[k]) inst_scenery[k] = XPLMCreateInstance(obj_scenery[k], none);
   inst_wk2 = XPLMCreateInstance(obj_wk2, wk2_refs);
@@ -1388,7 +1389,6 @@ PLUGIN_API int XPluginEnable() {
   place_instance(inst_probe, hidden, 0, 0, 0, nullptr);
   place_instance(inst_plume, hidden, 0, 0, 0, nullptr);
   place_instance(inst_macro, hidden, 0, 0, 0, nullptr);
-  for (auto& c : inst_detail) place_instance(c, hidden, 0, 0, 0, nullptr);
   for (auto& c : inst_scenery) place_instance(c, hidden, 0, 0, 0, nullptr);
   for (auto& t : trail) place_instance(t.inst, hidden, 0, 0, 0, nullptr);
   XPLMRegisterFlightLoopCallback(flight_loop, -1.0f, nullptr);

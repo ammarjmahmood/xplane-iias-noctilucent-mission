@@ -369,21 +369,53 @@ def build_ss2():
     # Cockpit interior: inward-facing shell with real window openings, and an
     # instrument panel with three displays.
     sh = [(z, r * 0.94, ry * 0.94, cy) for z, r, ry, cy in SS2_FUSE if -8.2 <= z <= -3.5]
-    Ps, UVs, ths, fzs = body([(-8.18, 0.36, 0.34, -0.03)] + sh, 120, 90, UV_INTERIOR)
+    Ps, UVs, ths, fzs = body([(-8.18, 0.36, 0.34, -0.03)] + sh, 200, 140, UV_INTERIOR)
     shell = grid_part("ss2_cockpit_shell", Ps, UVs, flip=True)
     windows = SS2_COCKPIT_WINDOWS + [w for w in SS2_CABIN_WINDOWS if w[1] < -3.5]
 
-    def keep(c):
-        z = c[2]
-        t = np.degrees(np.arctan2(c[0], c[1]))
+    margin = 0.02
+    shell_st = np.array([(-8.18, 0.36, 0.34, -0.03)] + sh)
+    rx_of = PchipInterpolator(shell_st[:, 0], shell_st[:, 1])
+    ry_of = PchipInterpolator(shell_st[:, 0], shell_st[:, 2])
+    cy_of = PchipInterpolator(shell_st[:, 0], shell_st[:, 3])
+
+    def window_metric(x, y, z):
+        """(d, window) for the nearest window; d < 1 means inside the opening."""
+        t = np.degrees(np.arctan2(x, y))
         r = ss2_radius_at(z)
-        for wt, wz, wr in windows:
+        best = (9.0, None)
+        for w in windows:
+            wt, wz, wr = w
             dth = np.radians((t - wt + 180) % 360 - 180) * r
-            if (dth / (wr + 0.035)) ** 2 + ((z - wz) / (wr + 0.035)) ** 2 < 1.0:
-                return False
-        return True
+            d = np.hypot(dth, z - wz) / (wr + margin)
+            if d < best[0]:
+                best = (d, w)
+        return best
+
+    def keep(c):
+        return window_metric(*c)[0] >= 1.0
 
     cut_holes(shell, keep)
+    # Snap vertices of the remaining triangles that sit inside an opening onto
+    # the opening's outline, so the window edges are smooth curves.
+    used = set(shell.i)
+    for k in used:
+        x, y, z, nx, ny, nz, s_, t_ = shell.v[k]
+        d, w = window_metric(x, y, z)
+        if w is None or d >= 1.0:
+            continue
+        wt, wz, wr = w
+        r = ss2_radius_at(z)
+        t = np.degrees(np.arctan2(x, y))
+        dth = np.radians((t - wt + 180) % 360 - 180) * r
+        dz = z - wz
+        if np.hypot(dth, dz) < 1e-6:
+            continue
+        sc = 1.0 / d
+        z2 = wz + dz * sc
+        th2 = np.radians(wt) + dth * sc / ss2_radius_at(z2)
+        rx, ry, cy = float(rx_of(z2)), float(ry_of(z2)), float(cy_of(z2))
+        shell.v[k] = (rx * np.sin(th2), cy + ry * np.cos(th2), z2, nx, ny, nz, s_, t_)
     parts.append(shell)
     parts.append(window_frames(windows))
     pnl = Part("ss2_panel")
@@ -396,7 +428,7 @@ def build_ss2():
     return parts
 
 
-def window_frames(windows, width=0.075):
+def window_frames(windows, width=0.07):
     """Smooth rings around each cockpit/cabin opening, seen from inside."""
     frame = Part("ss2_window_frames")
     u0, v0, u1, v1 = UV_STRUT
@@ -407,7 +439,7 @@ def window_frames(windows, width=0.075):
             ring = []
             for f in phi:
                 z = wz + rho * np.sin(f)
-                R = ss2_radius_at(z) * (0.935 if rho > wr else 0.95)
+                R = ss2_radius_at(z) * 0.92  # just inside the 0.94 shell: no depth fighting
                 th = np.radians(wt) + rho * np.cos(f) / R
                 ring.append((R * np.sin(th), R * np.cos(th), z))
             rings.append(ring)
