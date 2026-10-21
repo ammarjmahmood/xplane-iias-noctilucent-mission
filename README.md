@@ -146,8 +146,16 @@ release)** instead. The carrier still flies itself to 50,000 ft. Then:
    55,000 ft.
 5. Glide back and lower the **gear** before landing.
 
-A joystick is strongly recommended. Without one, X-Plane uses the mouse
-position as the stick.
+**Joysticks:** any joystick, yoke or rudder pedals that work in X-Plane
+work here. Set them up as usual in **Settings → Joystick** (pitch, roll and
+yaw axes). The plugin reads X-Plane's stick and pedal positions directly.
+Put the mission commands (release, ignite, feather, gear, probe) on
+joystick buttons via **Settings → Joystick → Buttons** by searching for
+`iias/mission`. Without a joystick, X-Plane uses the mouse position as the
+stick.
+
+In autoflight the plugin flies and ignores the joystick; in manual mode
+you have it from release onward.
 
 ---
 
@@ -335,9 +343,10 @@ gh release create v1.1 IIAS-Noctilucent-Mission-xplane12-linux-windows.zip --not
   sky of space.
 - **Displays** (`src/avionics.*`): drawn with OpenGL in X-Plane's 2-D
   layer. They can also be popped out into separate windows.
-- **Test** (`tests/mission_sim.cpp`): flies the entire mission without
-  X-Plane. It checks the apogee, the probe's pass through the clouds and
-  the landing spot.
+- **Tests** run without X-Plane (`ctest`). `tests/mission_sim.cpp` flies
+  the entire autoflight mission and checks the apogee, the probe's pass
+  through the clouds and the landing spot. `tests/manual_controls.cpp`
+  checks the joystick directions in manual mode.
 
 ## Data sources and credits
 
@@ -375,6 +384,11 @@ gh release create v1.1 IIAS-Noctilucent-Mission-xplane12-linux-windows.zip --not
 - **Windows build not tested on Windows:** the Windows plugin is
   cross-compiled and was not run on Windows during development. Please
   report any problems.
+- **Manual mode is checked by an automated test, not yet test-flown with
+  real hardware:** `tests/manual_controls.cpp` confirms that stick back
+  raises the nose, stick forward lowers it, right stick rolls right and
+  right pedal yaws right. Nobody has flown a whole manual mission with a
+  physical joystick yet.
 
 ## Repository layout
 

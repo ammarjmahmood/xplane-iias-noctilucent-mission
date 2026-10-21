@@ -2,7 +2,7 @@
 #include "autopilot.hpp"
 #include "flight.hpp"
 
-#include <cassert>
+#include "check.hpp"
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -27,7 +27,7 @@ int main(int argc, char** argv) {
     max_q = std::max(max_q, w.ship.q_pa);
     if (w.probe.deployed && !hit_150k_probe) {
       hit_150k_probe = true;
-      assert(w.probe.pos.u > flight::kProbeAltM - 200.0);
+      CHECK(w.probe.pos.u > flight::kProbeAltM - 200.0);
     }
     for (; printed < st.events.size(); ++printed)
       std::printf("[sim %7.1fs wall %6.1fs] %s\n", sim, wall, st.events[printed].text.c_str());
@@ -39,7 +39,7 @@ int main(int argc, char** argv) {
                   s.pitch_deg, s.roll_deg, s.g_load, s.pos.e, s.pos.n, s.feather);
       next_report = sim + (st.step == autopilot::Step::Flare ? 0.25 : st.step == autopilot::Step::Final ? 2 : 8);
     }
-    assert(std::isfinite(w.ship.pos.u));
+    CHECK(std::isfinite(w.ship.pos.u));
   }
   const auto& s = w.ship;
   const double along = s.pos.e * std::sin(339.2 * M_PI / 180) + s.pos.n * std::cos(339.2 * M_PI / 180);
@@ -48,9 +48,9 @@ int main(int argc, char** argv) {
               s.apogee_m, s.apogee_m / 0.3048, s.max_mach, s.max_g, max_q, w.probe.apogee_m);
   std::printf("stopped %.0f m past threshold, %.0f m off centreline; wall clock %.1f min\n", along, cross,
               wall / 60.0);
-  assert(st.step == autopilot::Step::Done);
-  assert(s.apogee_m > flight::kCloudAltM + 2000.0 && s.apogee_m < 95000.0);
-  assert(w.probe.deployed && w.probe.apogee_m > flight::kCloudAltM);
-  assert(along > -100.0 && along < 4400.0 && std::abs(cross) < 30.0);
+  CHECK(st.step == autopilot::Step::Done);
+  CHECK(s.apogee_m > flight::kCloudAltM + 2000.0 && s.apogee_m < 95000.0);
+  CHECK(w.probe.deployed && w.probe.apogee_m > flight::kCloudAltM);
+  CHECK(along > -100.0 && along < 4400.0 && std::abs(cross) < 30.0);
   std::printf("PASS\n");
 }
